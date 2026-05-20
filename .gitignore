@@ -1,0 +1,23 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env
+.venv/
+
+# --- IDE & Editor (File hệ thống) ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Dữ liệu đồ án SCARA ---
+# Bỏ qua các file ảnh demo hoặc video quay được trong lúc test
+*.jpg
+*.png
+*.mp4
+# Nếu có file log hoặc file cấu hình riêng cho từng máy
+*.log
+config_local.json

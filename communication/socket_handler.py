@@ -83,7 +83,7 @@ class SocketHandler:
                 if self.is_connected and self.client_socket:
                     try:
                         self.client_socket.settimeout(1.0)
-                        data = self.client_socket.recv(1024)
+                        data = self.client_socket.recv(1024) #1024 bytes là đủ cho các lệnh PASS/FAIL đơn giản
                         
                         if not data:
                             # Nếu data rỗng -> Pi đã ngắt kết nối

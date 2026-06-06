@@ -27,17 +27,49 @@ class SimulationTab(ctk.CTkFrame):
       8. Dual IK Solution    – chọn elbow-up / elbow-down qua radio button
     """
 
-    # ── Cơ học ──────────────────────────────────────────────────────────────
-    L1 = 100.0
-    L2 = 100.0
-    Z_MAX = 200.0
-
-    # Joint limits (degrees)
-    J1_MIN, J1_MAX = -150.0, 150.0
-    J2_MIN, J2_MAX = -150.0, 150.0
-
     # Interpolation speed (fraction per frame)
     LERP_SPEED = 0.04
+
+    # ── Properties đọc thông số từ settings_tab (luôn lấy giá trị mới nhất) ──
+    def _settings(self):
+        if self.main_window and hasattr(self.main_window, 'tabs'):
+            return self.main_window.tabs.get("settings")
+        return None
+
+    @property
+    def L1(self):
+        s = self._settings()
+        return s.l1.get() if s else 100.0
+
+    @property
+    def L2(self):
+        s = self._settings()
+        return s.l2.get() if s else 100.0
+
+    @property
+    def Z_MAX(self):
+        s = self._settings()
+        return s.z_max.get() if s else 200.0
+
+    @property
+    def J1_MIN(self):
+        s = self._settings()
+        return s.q1_min.get() if s else -150.0
+
+    @property
+    def J1_MAX(self):
+        s = self._settings()
+        return s.q1_max.get() if s else 150.0
+
+    @property
+    def J2_MIN(self):
+        s = self._settings()
+        return s.q2_min.get() if s else -150.0
+
+    @property
+    def J2_MAX(self):
+        s = self._settings()
+        return s.q2_max.get() if s else 150.0
 
     def __init__(self, parent, main_window=None):
         super().__init__(parent, fg_color=BG_PRIMARY)
@@ -299,17 +331,19 @@ class SimulationTab(ctk.CTkFrame):
         lim = self.L1 + self.L2 + 20
         ax.set_xlim(-lim, lim); ax.set_ylim(-lim, lim)
 
-        # Workspace rings (Feature 2)
+        # Workspace rings — dùng Line2D để cập nhật động khi L1/L2 thay đổi
         theta = [i * math.pi/180 for i in range(361)]
+        self._ws_theta = theta  # cache để dùng lại khi update
         r_max = self.L1 + self.L2
         r_min = abs(self.L1 - self.L2)
-        ax.plot([r_max*math.cos(t) for t in theta],
-                [r_max*math.sin(t) for t in theta],
-                color="#00884466", linewidth=0.8, linestyle="--")
-        if r_min > 0:
-            ax.plot([r_min*math.cos(t) for t in theta],
-                    [r_min*math.sin(t) for t in theta],
-                    color="#FF443366", linewidth=0.8, linestyle="--")
+        self.ws_ring_max, = ax.plot(
+            [r_max*math.cos(t) for t in theta],
+            [r_max*math.sin(t) for t in theta],
+            color="#00884466", linewidth=0.8, linestyle="--")
+        self.ws_ring_min, = ax.plot(
+            [r_min*math.cos(t) for t in theta] if r_min > 0 else [],
+            [r_min*math.sin(t) for t in theta] if r_min > 0 else [],
+            color="#FF443366", linewidth=0.8, linestyle="--")
 
         # Robot arm
         self.arm2d_line, = ax.plot([], [], "o-",
@@ -345,18 +379,35 @@ class SimulationTab(ctk.CTkFrame):
 
     @staticmethod
     def _lerp_angle(current, target, t):
-        """Tính toán quãng đường ngắn nhất qua vòng tròn 360 độ"""
-        # Tìm độ lệch góc ngắn nhất trong khoảng [-180, 180]
-        diff = (target - current + 180) % 360 - 180
-        
-        # Cộng độ lệch này vào vị trí hiện tại
-        return current + diff * t
+        """Nội suy góc theo đường ngắn nhất, kết quả luôn trong [0, 360)"""
+        diff   = (target - current + 180) % 360 - 180
+        result = current + diff * t
+        return result % 360   # clamp về [0, 360)
     
     def _clamp_joint(self, j, lo, hi): return max(lo, min(hi, j))
 
     def _in_workspace(self, x, y):
         d = math.sqrt(x**2 + y**2)
         return abs(self.L1 - self.L2) <= d <= (self.L1 + self.L2)
+
+    def _update_workspace_rings(self):
+        """Cập nhật vòng tròn workspace 2D khi L1/L2 thay đổi từ settings_tab"""
+        theta = self._ws_theta
+        r_max = self.L1 + self.L2
+        r_min = abs(self.L1 - self.L2)
+        self.ws_ring_max.set_data(
+            [r_max * math.cos(t) for t in theta],
+            [r_max * math.sin(t) for t in theta]
+        )
+        if r_min > 0:
+            self.ws_ring_min.set_data(
+                [r_min * math.cos(t) for t in theta],
+                [r_min * math.sin(t) for t in theta]
+            )
+        # Cập nhật lại giới hạn trục 2D
+        lim = r_max + 20
+        self.ax2d.set_xlim(-lim, lim)
+        self.ax2d.set_ylim(-lim, lim)
 
     # ══════════════════════════════════════════════════════════════════════════
     # ACTIONS
@@ -367,19 +418,37 @@ class SimulationTab(ctk.CTkFrame):
             y = float(self.ent_y.get())
             z = float(self.ent_z_ik.get())
         except ValueError:
+            self.lbl_reach.configure(
+                text="● Nhập tọa độ hợp lệ!", text_color=BTN_WARNING)
             return
 
-        result = inverse_kinematics(x, y, z, self.L1, self.L2)
-        if result is None:
-            self._set_reach_status(False)
+        # Kiểm tra tầm với trước khi gọi IK
+        if not self._in_workspace(x, y):
+            self.lbl_reach.configure(
+                text="● OUT OF RANGE — Ngoài tầm với!",
+                text_color=BTN_DANGER)
+            self.led_canvas.itemconfig(self._led, fill="#FF3333")
+            self._ik_solutions = []
             return
 
-        q1u, q2u, _, q1d, q2d, _ = result
-        self._ik_solutions = [
-            (rad_to_deg(q1u), rad_to_deg(q2u), z),
-            (rad_to_deg(q1d), rad_to_deg(q2d), z),
-        ]
-        self._set_reach_status(True)
+        # Gọi IK — trả về (q1, q2, z) cho elbow-up
+        result_up   = inverse_kinematics(x, y, z, self.L1, self.L2, solution='elbow_up')
+        result_down = inverse_kinematics(x, y, z, self.L1, self.L2, solution='elbow_down')
+
+        if result_up is None:
+            self.lbl_reach.configure(
+                text="● IK không có nghiệm!", text_color=BTN_DANGER)
+            self._ik_solutions = []
+            return
+
+        q1u, q2u, _ = result_up
+        self._ik_solutions = [(rad_to_deg(q1u), rad_to_deg(q2u), z)]
+
+        if result_down is not None:
+            q1d, q2d, _ = result_down
+            self._ik_solutions.append((rad_to_deg(q1d), rad_to_deg(q2d), z))
+
+        self.lbl_reach.configure(text="● IN WORKSPACE", text_color=BTN_SUCCESS)
         self._apply_ik_selection()
 
     def _refresh_ik_preview(self):
@@ -544,8 +613,9 @@ class SimulationTab(ctk.CTkFrame):
         result = inverse_kinematics(x, y, z, self.L1, self.L2)
 
         if result:
-            j1 = rad_to_deg(result[0])
-            j2 = rad_to_deg(result[1])
+            j1, j2, _ = result
+            j1 = rad_to_deg(j1)
+            j2 = rad_to_deg(j2)
             self._set_target(j1, j2, z)
             self.lbl_playback_status.configure(
                 text=f"▶ P{self._traj_index+1:02d}/{len(self.waypoints):02d}  "
@@ -577,6 +647,9 @@ class SimulationTab(ctk.CTkFrame):
             self._tgt_j1 = self.control_tab.j1_angle.get()
             self._tgt_j2 = self.control_tab.j2_angle.get()
             self._tgt_z  = self.control_tab.z_pos.get()
+
+        # Cập nhật workspace rings nếu L1/L2 thay đổi từ settings
+        self._update_workspace_rings()
 
         # Feature 3: smooth interpolation
         cur_j1 = self.sim_j1.get()

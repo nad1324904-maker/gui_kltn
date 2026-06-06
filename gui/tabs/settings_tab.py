@@ -1,3 +1,4 @@
+
 # ============================================================================
 # gui/tabs/settings_tab.py (v2)
 # Tab Cài đặt — Cấu hình cơ khí và thông số Motor (Đã loại bỏ PID sang tab PID Tuning)

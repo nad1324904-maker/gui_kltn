@@ -15,7 +15,7 @@ from gui.tabs.connection_tab import ConnectionTab
 from gui.tabs.control_tab    import ControlTab
 from gui.tabs.pid_tuning_tab import PIDTuningTab
 from gui.tabs.settings_tab   import SettingsTab
-from gui.tabs.simulation_tab import SimulationTab
+from gui.tabs.simulation import SimulationTab
 
 from gui.styles import *
 

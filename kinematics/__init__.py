@@ -12,7 +12,5 @@ from .kinematic import (
 
 from .robot_params import (
     L1, L2,
-    Q1_MIN_DEG, Q1_MAX_DEG, Q2_MIN_DEG, Q2_MAX_DEG,
-    Q1_MIN_RAD, Q1_MAX_RAD, Q2_MIN_RAD, Q2_MAX_RAD,
-    MAX_REACH, MIN_REACH
+    Q1_MIN_DEG, Q1_MAX_DEG, Q2_MIN_DEG, Q2_MAX_DEG
 )

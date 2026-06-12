@@ -185,7 +185,7 @@ class ConnectionTab(ctk.CTkFrame):
             frame, height=200, font=FONT_MONO, fg_color=BG_PRIMARY
         )
         self.log_text.pack(fill=tk.BOTH, expand=True, padx=PADDING, pady=(4, PADDING))
-
+    
     # ============================================================
     # SERIAL: scan / kết nối / ngắt
     # ============================================================

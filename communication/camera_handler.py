@@ -7,6 +7,7 @@
 import cv2
 import threading
 import queue
+import time
 
 
 class CameraHandler:
@@ -32,18 +33,14 @@ class CameraHandler:
     def connect(self, source):
         """
         Kết nối tới nguồn camera.
-
-        Args:
-            source: int (0, 1, ... cho webcam) hoặc str (URL MJPEG của Pi).
-                    Ví dụ: 0  hoặc  "http://192.168.1.10:8080"
-
-        Returns:
-            (bool, str): (thành công, thông báo)
         """
         if self.is_connected:
             return False, "Camera đang kết nối. Ngắt kết nối trước."
 
         cap = cv2.VideoCapture(source)
+        # Ép buffer về 1 để tránh độ trễ tích lũy trên cáp LAN mạng dây
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         if not cap.isOpened():
             return False, f"ERROR: Không mở được nguồn camera: {source}"
 
@@ -62,16 +59,21 @@ class CameraHandler:
         self._running = False
         self.is_connected = False
 
-        if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=2.0)
-
+        # FIX CRITICAL BUG: Giải phóng cap TRƯỚC khi join thread để bẻ gãy lệnh cap.read() đang bị block ngầm nếu đứt mạng
         if self.cap:
             self.cap.release()
             self.cap = None
 
-        # Xóa hết frame còn trong queue
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+            self._thread = None
+
+        # Xóa hết frame tồn đọng còn trong queue
         while not self.frame_queue.empty():
-            self.frame_queue.get_nowait()
+            try:
+                self.frame_queue.get_nowait()
+            except queue.Empty:
+                break
 
     # --------------------------------------------------------------------------
     # PHẦN 2: VÒNG LẶP ĐỌC FRAME (chạy trong thread riêng)
@@ -82,33 +84,37 @@ class CameraHandler:
         Liên tục đọc frame từ camera.
         KHÔNG tương tác với GUI — chỉ đẩy frame vào queue.
         """
-        while self._running:
-            ret, frame = self.cap.read()
+        while self._running and self.cap:
+            try:
+                ret, frame = self.cap.read()
 
-            if not ret:
-                # Mất tín hiệu — đặt cờ để GUI biết
+                if not ret:
+                    # Mất tín hiệu mạng hoặc đóng camera bên phía Pi
+                    self.is_connected = False
+                    break
+
+                # Nếu queue đầy, chủ động giải phóng ảnh cũ nhất để nhét ảnh mới thời gian thực vào
+                if self.frame_queue.full():
+                    try:
+                        self.frame_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+
+                if self._running:
+                    self.frame_queue.put(frame)
+            except Exception:
                 self.is_connected = False
                 break
-
-            # Nếu queue đầy, bỏ frame cũ nhất để luôn có frame mới
-            if self.frame_queue.full():
-                try:
-                    self.frame_queue.get_nowait()
-                except queue.Empty:
-                    pass
-
-            self.frame_queue.put(frame)
+                
+        self.is_connected = False
 
     # --------------------------------------------------------------------------
-    # PHẦN 3: LẤY FRAME (được gọi từ GUI — main thread)
+    # PHẦN 3: LẤY FRAME (được gọi từ GUI — main thread định kỳ)
     # --------------------------------------------------------------------------
 
     def get_frame(self):
         """
         Lấy frame mới nhất từ queue.
-
-        Returns:
-            numpy.ndarray (BGR) nếu có frame, None nếu queue rỗng.
         """
         try:
             return self.frame_queue.get_nowait()

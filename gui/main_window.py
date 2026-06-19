@@ -11,7 +11,7 @@ from communication.serial_handler import SerialHandler
 from communication.camera_handler import CameraHandler
 from communication.socket_handler import SocketHandler
 
-from gui.tabs.connection_tab import ConnectionTab
+from gui.tabs.connection import ConnectionTab
 from gui.tabs.control_tab    import ControlTab
 from gui.tabs.pid_tuning_tab import PIDTuningTab
 from gui.tabs.settings_tab   import SettingsTab

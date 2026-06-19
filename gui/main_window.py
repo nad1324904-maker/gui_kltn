@@ -12,7 +12,7 @@ from communication.camera_handler import CameraHandler
 from communication.socket_handler import SocketHandler
 
 from gui.tabs.connection import ConnectionTab
-from gui.tabs.control_tab    import ControlTab
+from gui.tabs.control    import ControlTab
 from gui.tabs.pid_tuning_tab import PIDTuningTab
 from gui.tabs.settings_tab   import SettingsTab
 from gui.tabs.simulation import SimulationTab
